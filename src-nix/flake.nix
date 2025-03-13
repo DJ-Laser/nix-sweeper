@@ -3,24 +3,17 @@
     nixpkgs.url = "github:NixOS/nixpkgs/24.05";
     rand-nix = {
       url = "github:figsoda/rand-nix";
-      follows = "nixpkgs";
+      inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
   outputs = {
     self,
+    nixpkgs,
     rand-nix,
-  }: {
-    ffi = {
-      initial = {
-        cursor_x = 0;
-        cursor_y = 0;
-
-        board_width = 15;
-        board_height = 15;
-      };
-
-      update = x: {e = x + 2;};
-    };
+  }: let
+    lib = nixpkgs.lib;
+  in {
+    ffi = import ./ffi.nix {inherit lib rand-nix;};
   };
 }

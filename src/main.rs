@@ -1,47 +1,54 @@
-use std::{
-    env,
-    process::{self, Command},
+use std::io::{self, Write, stdout};
+
+use crossterm::{
+    cursor,
+    event::{self, KeyCode, KeyModifiers},
+    terminal,
 };
+use output::{print_formatted, switch_terminal_mode};
 
-fn run_nix(function: &str) -> String {
-    let mut command = Command::new(env!("NIX_BINARY"));
-    command.arg("eval");
-    command.arg(format!("{}#ffi", env!("NIX_CODE_SRC")));
-    command.args(["--apply", function]);
+mod ffi;
+mod output;
+mod random;
 
-    let output = match command.output() {
-        Ok(output) => output,
-        Err(error) => {
-            eprintln!("Error spawning nix: {:?}", error);
-            process::exit(-1);
+fn event_loop(stdout: &mut impl Write) -> io::Result<()> {
+    let state = ffi::initial(10, 10, 20)?;
+
+    loop {
+        crossterm::execute!(
+            stdout,
+            cursor::MoveTo(0, 0),
+            terminal::Clear(terminal::ClearType::All),
+            terminal::Clear(terminal::ClearType::Purge),
+            print_formatted(&ffi::output(&state)?)
+        )?;
+
+        match event::read()? {
+            event::Event::Key(key_event) => match key_event.code {
+                KeyCode::Char('c') if matches!(key_event.modifiers, KeyModifiers::CONTROL) => break,
+                KeyCode::Char('q') => break,
+
+                _ => (),
+            },
+            _ => (),
         }
-    };
-
-    if !output.status.success() {
-        eprintln!(
-            "Error running nix. Latest log lines:\n{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        process::exit(-1);
     }
 
-    let Ok(output_nix) = String::from_utf8(output.stdout) else {
-        eprintln!("Error running nix. Non-utf8 output.");
-        process::exit(-1);
-    };
-
-    return output_nix.trim().to_string();
+    Ok(())
 }
 
-fn initial() -> String {
-    run_nix("ffi: ffi.initial")
-}
+fn main() -> io::Result<()> {
+    let mut stdout = stdout();
+    switch_terminal_mode(&mut stdout, true)?;
 
-fn update(state: &str) -> String {
-    run_nix(&format!("ffi: ffi.update {}", state))
-}
+    if let Err(error) = event_loop(&mut stdout) {
+        switch_terminal_mode(&mut stdout, false)?;
+        return Err(io::Error::new(
+            error.kind(),
+            format!("Unexpected error: {:?}", error),
+        ));
+    }
 
-fn main() {
-    println!("{:?}", initial());
-    println!("{:?}", update("5"));
+    switch_terminal_mode(&mut stdout, false)?;
+    Ok(())
 }
