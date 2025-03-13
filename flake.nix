@@ -42,12 +42,19 @@
       name = "my-crate";
       src = ./.;
     };
+
+    nixBinary = "${pkgs.nix}/bin/nix";
   in {
     devShells.${system}.default = pkgs.mkShell {
       buildInputs = with pkgs; [alejandra rustToolchain];
       RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/src";
+      NIX_BINARY = nixBinary;
+      NIX_CODE_SRC = "./src-nix/flake.nix"; # String in dev mode for rapid iteration
     };
 
-    packages.${system}.default = cargoNix.rootCrate.build;
+    packages.${system}.default = cargoNix.rootCrate.build.overrideAttrs (finalAttrs: previousAttrs: {
+      NIX_BINARY = nixBinary;
+      NIX_CODE_SRC = ./src-nix/flake.nix;
+    });
   };
 }
