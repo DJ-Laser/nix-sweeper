@@ -1,7 +1,12 @@
 {
   lib,
   rand-nix,
-}: {
+  ...
+} @ imports: let
+  inherit (import ./board.nix imports) get_tile edit_tile generate_board regenerate_until_space_at_position;
+  inherit (import ./colors.nix imports) colors;
+  inherit (import ./output.nix (imports // {inherit colors;})) board_to_ascii;
+in {
   initial = {
     board_width,
     board_height,
@@ -9,123 +14,117 @@
     random_seed ? 0,
   } @ config: let
     rng = rand-nix.rng.withSeed (toString random_seed);
-
-    place_mine = board: rng: let
-      mine_x = rng.intBetween 1 board_width - 1;
-      mine_y = rng.next.intBetween 1 board_height - 1;
-
-      board' = lib.imap0 (y: row:
-        if y == mine_y
-        then
-          lib.imap0 (x: tile:
-            if x == mine_x
-            then tile // {mine = true;}
-            else tile)
-          row
-        else row)
-      board;
-    in {
-      board = board';
-      rng = rng.skip 2;
-    };
-
-    fill_board = n: board: rng: let
-      res = place_mine board rng;
-    in
-      if n == 0
-      then board
-      else fill_board (n - 1) res.board res.rng;
-
-    number_tile = board: y: x: let
-      neighbor = x_offset: y_offset: {
-        x = x + x_offset;
-        y = y + y_offset;
-      };
-
-      neighbors = [
-        (neighbor (-1) 1)
-        (neighbor 0 1)
-        (neighbor 1 1)
-        (neighbor (-1) 0)
-        (neighbor 1 0)
-        (neighbor (-1) (-1))
-        (neighbor 0 (-1))
-        (neighbor 1 (-1))
-      ];
-
-      valid_neighbors = lib.filter (neighbor:
-        true
-        && neighbor.x >= 0
-        && neighbor.x < board_width
-        && neighbor.y >= 0
-        && neighbor.y < board_height)
-      neighbors;
-
-      mine_neighbors = lib.filter (neighbor: (lib.elemAt (lib.elemAt board neighbor.y) neighbor.x).mine) valid_neighbors;
-    in
-      lib.length mine_neighbors;
-
-    assign_numbers = board:
-      lib.imap0 (y: row:
-        lib.imap0 (x: tile:
-          tile // {number = number_tile board y x;})
-        row)
-      board;
-
-    empty_board = lib.replicate board_height (lib.replicate board_width {
-      revealed = false;
-      flagged = false;
-      mine = false;
-      number = 0;
-    });
-    filled_board = fill_board num_mines empty_board rng;
-    numbered_board = assign_numbers filled_board;
+    res = generate_board (config // {rng = rng;});
   in {
-    inherit (config) board_width board_height;
+    inherit (config) board_width board_height num_mines;
 
     cursor_x = 0;
     cursor_y = 0;
 
-    board = numbered_board;
+    board = res.board;
+    random_seed = res.rng.int;
+    first_move = true;
   };
 
-  output = {
+  update = action: {
     board,
     board_width,
     board_height,
     cursor_x,
     cursor_y,
+    first_move,
+    random_seed,
     ...
   } @ state: let
-    tile_to_ascii = y: x: tile: let
-      selected = x == cursor_x && y == cursor_y;
-      revealed_icon =
-        if tile.mine
-        then "*"
-        else if tile.number == 0
-        then " "
-        else toString tile.number;
+    move_cursor = x_offset: y_offset: let
+      new_x = state.cursor_x + x_offset;
+      new_y = state.cursor_y + y_offset;
 
-      tile_icon =
-        if tile.revealed
-        then revealed_icon
-        else if tile.flagged
-        then "◆"
-        else "-";
+      constrained_x = lib.max 0 (lib.min new_x (board_width - 1));
+      constrained_y = lib.max 0 (lib.min new_y (board_height - 1));
+    in {
+      cursor_x = constrained_x;
+      cursor_y = constrained_y;
+    };
+
+    edit_board_tile = edit_tile board;
+    edit_board_tile_under_cursor = f: edit_board_tile f cursor_x cursor_y;
+
+    flood_fill_reveal = let
+      should_propagate = tile: !tile.flagged && !tile.revealed && tile.number == 0;
+      reveal_if_not_flagged = tile:
+        if !tile.flagged
+        then tile // {revealed = true;}
+        else tile;
+
+      recusive_fill = prev_board: x: y: let
+        is_valid_tile =
+          true
+          && x >= 0
+          && x < board_width
+          && y >= 0
+          && y < board_height;
+
+        board_self_revealed = edit_tile prev_board reveal_if_not_flagged x y;
+
+        board_south_flooded = recusive_fill board_self_revealed x (y + 1);
+        board_north_flooded = recusive_fill board_south_flooded x (y - 1);
+        board_west_flooded = recusive_fill board_north_flooded (x - 1) y;
+        board_east_flooded = recusive_fill board_west_flooded (x + 1) y;
+
+        tile = get_tile prev_board x y;
+      in
+        if !is_valid_tile
+        then lib.trace "invalid" prev_board
+        else if !should_propagate tile
+        then lib.trace "notzero" board_self_revealed
+        else lib.trace "ok" board_east_flooded;
     in
-      if selected
-      then "<${tile_icon}>"
-      else " ${tile_icon} ";
+      board: x: y: recusive_fill board x y;
 
-    row_to_ascii = y: row: "│${lib.concatStrings (lib.imap0 (tile_to_ascii y) row)}│";
-    rows_ascii = lib.concatStringsSep "\n" (lib.imap0 row_to_ascii board);
-    line_ascii = lib.concatStrings (lib.replicate (3 * board_width) "─");
+    reveal_at_cursor = let
+      config =
+        state
+        // {
+          rng = rand-nix.rng.withSeed (toString random_seed);
+        };
+      first_move_space_res = regenerate_until_space_at_position cursor_x cursor_y config board;
+      first_move_space_board = first_move_space_res.board;
+      first_move_space_rng = first_move_space_res.rng;
 
-    board_ascii = ''
-      ┌${line_ascii}┐
-      ${rows_ascii}
-      └${line_ascii}┘
-    '';
+      flood_fill_board = board: flood_fill_reveal board cursor_x cursor_y;
+    in
+      if first_move
+      then {
+        board = flood_fill_board first_move_space_board;
+        random_seed = first_move_space_rng.int;
+        first_move = false;
+      }
+      else {
+        board = flood_fill_board board;
+      };
+
+    applied_action =
+      if action == "up"
+      then move_cursor 0 (-1)
+      else if action == "down"
+      then move_cursor 0 1
+      else if action == "left"
+      then move_cursor (-1) 0
+      else if action == "right"
+      then move_cursor 1 0
+      else if action == "flag"
+      then {
+        board = edit_board_tile_under_cursor (tile:
+          if !tile.revealed
+          then tile // {flagged = !tile.flagged;}
+          else tile);
+      }
+      else if action == "expose"
+      then reveal_at_cursor
+      else throw "Unsupported action `${action}`";
   in
-    board_ascii;
+    state // applied_action;
+
+  output = board_to_ascii;
 }

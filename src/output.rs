@@ -51,3 +51,13 @@ pub fn switch_terminal_mode(stdout: &mut impl Write, raw: bool) -> io::Result<()
 pub fn print_formatted(text: &str) -> impl Command {
     return Print(text.replace("\n", "\r\n"));
 }
+
+pub fn redraw_screen(stdout: &mut impl Write, screen: &str) -> io::Result<()> {
+    crossterm::execute!(
+        stdout,
+        cursor::MoveTo(0, 0),
+        terminal::Clear(terminal::ClearType::All),
+        terminal::Clear(terminal::ClearType::Purge),
+        print_formatted(screen)
+    )
+}
