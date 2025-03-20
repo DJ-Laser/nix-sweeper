@@ -19,4 +19,4 @@ nix run github:dj-laser/nix-sweeper
 ```
 
 After it compiles, it will start the minesweeper game!
-Running it again will nox recompile it, as it is saved to the nix store!
+Running it again will not recompile it, as it is saved to the nix store!
