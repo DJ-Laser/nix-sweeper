@@ -36,6 +36,11 @@ fn event_loop(stdout: &mut impl Write) -> io::Result<()> {
             event::Event::Key(key_event) => match key_event.code {
                 KeyCode::Char('c') if matches!(key_event.modifiers, KeyModifiers::CONTROL) => break,
                 KeyCode::Char('q') => break,
+                KeyCode::Char('r') => {
+                    state = ffi::initial(10, 10, 12)?;
+                    redraw_screen(stdout, &ffi::output(&state)?)?;
+                    continue;
+                }
 
                 KeyCode::Up | KeyCode::Char('w') => Some(Action::Up),
                 KeyCode::Down | KeyCode::Char('s') => Some(Action::Down),
