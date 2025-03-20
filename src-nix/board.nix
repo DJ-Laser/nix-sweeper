@@ -17,6 +17,29 @@
       else row)
     board;
 
+  get_num_covered_tiles = board: let
+    tiles = lib.flatten board;
+  in
+    lib.count (tile: !tile.revealed) tiles;
+
+  is_mine_revealed = board: let
+    tiles = lib.flatten board;
+  in
+    lib.any (tile: tile.mine && tile.revealed) tiles;
+
+  get_win_state = {
+    board,
+    num_mines,
+    ...
+  } @ config: let
+    mine_revealed = is_mine_revealed board;
+    num_covered_tiles = get_num_covered_tiles board;
+    revealed_all_other_tiles = num_covered_tiles == num_mines;
+  in {
+    game_over = mine_revealed || revealed_all_other_tiles;
+    game_won = revealed_all_other_tiles && !mine_revealed;
+  };
+
   generate_board = {
     board_width,
     board_height,
@@ -111,5 +134,5 @@
       rng = rng;
     };
 in {
-  inherit get_tile edit_tile generate_board regenerate_until_space_at_position;
+  inherit get_tile edit_tile generate_board regenerate_until_space_at_position get_win_state;
 }

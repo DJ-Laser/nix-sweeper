@@ -3,7 +3,7 @@
   rand-nix,
   ...
 } @ imports: let
-  inherit (import ./board.nix imports) get_tile edit_tile generate_board regenerate_until_space_at_position;
+  inherit (import ./board.nix imports) get_tile edit_tile generate_board regenerate_until_space_at_position get_win_state;
   inherit (import ./colors.nix imports) colors;
   inherit (import ./output.nix (imports // {inherit colors;})) board_to_ascii;
 in {
@@ -92,16 +92,23 @@ in {
       first_move_space_board = first_move_space_res.board;
       first_move_space_rng = first_move_space_res.rng;
 
-      flood_fill_board = board: flood_fill_reveal board cursor_x cursor_y;
+      hit_mine = (get_tile board cursor_x cursor_y).mine;
+
+      flood_fill = board: flood_fill_reveal board cursor_x cursor_y;
+      hit_mine_board = edit_board_tile_under_cursor (tile: tile // {revealed = true;});
     in
       if first_move
       then {
-        board = flood_fill_board first_move_space_board;
+        board = flood_fill first_move_space_board;
         random_seed = first_move_space_rng.int;
         first_move = false;
       }
+      else if hit_mine
+      then {
+        board = hit_mine_board;
+      }
       else {
-        board = flood_fill_board board;
+        board = flood_fill board;
       };
 
     applied_action =
@@ -123,8 +130,23 @@ in {
       else if action == "expose"
       then reveal_at_cursor
       else throw "Unsupported action `${action}`";
-  in
-    state // applied_action;
 
-  output = board_to_ascii;
+    inherit (get_win_state state) game_over game_won;
+  in
+    if !game_over
+    then state // applied_action
+    else state;
+
+  output = state: let
+    inherit (get_win_state state) game_over game_won;
+    board_ascii = board_to_ascii state;
+
+    end_text =
+      if game_won
+      then ["You Win!" "Press `r` to restart"]
+      else ["Boom!" "Game over. Press `r` to restart"];
+  in
+    if game_over
+    then board_ascii + "\n" + lib.concatStringsSep "\n" end_text
+    else board_ascii;
 }
