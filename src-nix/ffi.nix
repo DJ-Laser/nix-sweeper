@@ -12,9 +12,28 @@
 
   inherit (import ./output/output.nix imports) board_to_ascii;
 in {
-  initial = get_initial_game_state;
+  initial = random_seed:
+    get_initial_game_state {
+      inherit random_seed;
+      board_width = 10;
+      board_height = 10;
+      num_mines = 12;
+    };
 
-  update = update_game_state;
+  update = action: state: (
+    if action == "restart"
+    then
+      get_initial_game_state {
+        inherit
+          (state)
+          board_width
+          board_height
+          num_mines
+          random_seed
+          ;
+      }
+    else update_game_state action state
+  );
 
   output = state: let
     inherit (get_win_state state) game_over game_won;

@@ -17,7 +17,7 @@
     board_width,
     board_height,
     num_mines,
-    random_seed ? 0,
+    random_seed,
   } @ config: let
     rng = rand-nix.rng.withSeed (toString random_seed);
     res = generate_board (config // {rng = rng;});

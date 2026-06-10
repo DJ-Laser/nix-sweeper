@@ -8,14 +8,16 @@ use crossterm::event::{self, Event, KeyCode, KeyModifiers};
 use ffi::Action;
 use output::{redraw_screen, switch_terminal_mode};
 
+use crate::ffi::NixState;
+
 mod ffi;
 mod output;
 mod random;
 
 fn event_loop(stdout: &mut impl Write) -> io::Result<()> {
-    let mut state = ffi::initial(10, 10, 12)?;
+    let mut state = NixState::initial()?;
 
-    redraw_screen(stdout, &ffi::output(&state)?)?;
+    redraw_screen(stdout, &state.output()?)?;
 
     loop {
         let mut last_event: Option<Event> = None;
@@ -36,11 +38,6 @@ fn event_loop(stdout: &mut impl Write) -> io::Result<()> {
             event::Event::Key(key_event) => match key_event.code {
                 KeyCode::Char('c') if matches!(key_event.modifiers, KeyModifiers::CONTROL) => break,
                 KeyCode::Char('q') => break,
-                KeyCode::Char('r') => {
-                    state = ffi::initial(10, 10, 12)?;
-                    redraw_screen(stdout, &ffi::output(&state)?)?;
-                    continue;
-                }
 
                 KeyCode::Up | KeyCode::Char('w') => Some(Action::Up),
                 KeyCode::Down | KeyCode::Char('s') => Some(Action::Down),
@@ -50,14 +47,16 @@ fn event_loop(stdout: &mut impl Write) -> io::Result<()> {
                 KeyCode::Char('f') => Some(Action::Flag),
                 KeyCode::Enter | KeyCode::Char(' ') => Some(Action::Expose),
 
+                KeyCode::Char('r') => Some(Action::Restart),
+
                 _ => None,
             },
             _ => None,
         };
 
         if let Some(action) = action {
-            state = ffi::update(action, &state)?;
-            redraw_screen(stdout, &ffi::output(&state)?)?;
+            state = state.update(action)?;
+            redraw_screen(stdout, &state.output()?)?;
         }
     }
 

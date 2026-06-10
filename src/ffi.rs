@@ -5,35 +5,12 @@ use std::{
 
 use crate::random::random;
 
-pub enum Action {
-    Up,
-    Down,
-    Left,
-    Right,
-
-    Flag,
-    Expose,
-}
-
-impl Action {
-    pub fn as_nix(&self) -> String {
-        match self {
-            Self::Up => r#""up""#.to_string(),
-            Self::Down => r#""down""#.to_string(),
-            Self::Left => r#""left""#.to_string(),
-            Self::Right => r#""right""#.to_string(),
-            Self::Flag => r#""flag""#.to_string(),
-            Self::Expose => r#""expose""#.to_string(),
-        }
-    }
-}
-
-fn run_nix(function: &str, json: bool) -> io::Result<String> {
+fn run_nix(nix_function: &str, json: bool) -> io::Result<String> {
     let mut command = Command::new(env!("NIX_BINARY"));
     command.args(["--extra-experimental-features", "nix-command flakes"]);
     command.arg("eval");
     command.arg(format!("{}#ffi", env!("NIX_CODE_SRC")));
-    command.args(["--apply", function]);
+    command.args(["--apply", nix_function]);
 
     #[cfg(debug_assertions)]
     command.arg("--show-trace");
@@ -72,34 +49,64 @@ fn run_nix(function: &str, json: bool) -> io::Result<String> {
     return Ok(output_nix.trim().to_string());
 }
 
-pub fn initial(width: usize, height: usize, num_mines: usize) -> io::Result<String> {
-    let random_seed = random()?;
+pub enum Action {
+    Up,
+    Down,
+    Left,
+    Right,
 
-    run_nix(
-        &format!(
-            "ffi: ffi.initial {{
-          board_width = {width};
-          board_height = {height};
-          num_mines = {num_mines};
-          random_seed = {random_seed};
-      }}"
-        ),
-        true,
-    )
+    Flag,
+    Expose,
+
+    Restart,
 }
 
-pub fn update(action: Action, state: &str) -> io::Result<String> {
-    let action = action.as_nix();
-
-    run_nix(
-        &format!("ffi: ffi.update {action} (builtins.fromJSON ''{state}'')"),
-        true,
-    )
+impl Action {
+    pub fn as_nix(&self) -> String {
+        match self {
+            Self::Up => r#""up""#.to_string(),
+            Self::Down => r#""down""#.to_string(),
+            Self::Left => r#""left""#.to_string(),
+            Self::Right => r#""right""#.to_string(),
+            Self::Flag => r#""flag""#.to_string(),
+            Self::Expose => r#""expose""#.to_string(),
+            Self::Restart => r#""restart""#.to_string(),
+        }
+    }
 }
 
-pub fn output(state: &str) -> io::Result<String> {
-    run_nix(
-        &format!("ffi: ffi.output (builtins.fromJSON ''{state}'')"),
-        false,
-    )
+pub struct NixState {
+    nix_state: String,
+}
+
+impl NixState {
+    fn from_run_nix(nix_function: &str) -> io::Result<Self> {
+        let nix_output = run_nix(nix_function, true)?;
+
+        Ok(Self {
+            nix_state: nix_output,
+        })
+    }
+
+    pub fn initial() -> io::Result<Self> {
+        let random_seed = random()?;
+
+        Self::from_run_nix(&format!("ffi: ffi.initial {random_seed}"))
+    }
+
+    pub fn update(&self, action: Action) -> io::Result<Self> {
+        let action = action.as_nix();
+
+        Self::from_run_nix(&format!(
+            "ffi: ffi.update {action} (builtins.fromJSON ''{}'')",
+            self.nix_state
+        ))
+    }
+
+    pub fn output(&self) -> io::Result<String> {
+        run_nix(
+            &format!("ffi: ffi.output (builtins.fromJSON ''{}'')", self.nix_state),
+            false,
+        )
+    }
 }
