@@ -3,7 +3,15 @@
   rand-nix,
   ...
 } @ imports: let
-  inherit (import ./board.nix imports) get_tile edit_tile generate_board regenerate_until_space_at_position get_win_state;
+  inherit
+    (import ./board.nix imports)
+    get_tile
+    edit_tile
+    reveal_all_mines
+    generate_board
+    regenerate_until_space_at_position
+    get_win_state
+    ;
   inherit (import ./colors.nix imports) colors;
   inherit (import ./output.nix (imports // {inherit colors;})) board_to_ascii;
 in {
@@ -67,10 +75,17 @@ in {
 
         board_self_revealed = edit_tile prev_board reveal_if_not_flagged x y;
 
-        board_south_flooded = recusive_fill board_self_revealed x (y + 1);
-        board_north_flooded = recusive_fill board_south_flooded x (y - 1);
-        board_west_flooded = recusive_fill board_north_flooded (x - 1) y;
-        board_east_flooded = recusive_fill board_west_flooded (x + 1) y;
+        board_fully_flooded = let
+          board_north_flooded = recusive_fill board_self_revealed x (y - 1);
+          board_north_east_flooded = recusive_fill board_north_flooded (x + 1) (y - 1);
+          board_east_flooded = recusive_fill board_north_east_flooded (x + 1) y;
+          board_south_east_flooded = recusive_fill board_east_flooded (x + 1) (y + 1);
+          board_south_flooded = recusive_fill board_south_east_flooded x (y + 1);
+          board_south_west_flooded = recusive_fill board_south_flooded (x - 1) (y + 1);
+          board_west_flooded = recusive_fill board_south_west_flooded (x - 1) y;
+          board_north_west_flooded = recusive_fill board_west_flooded (x - 1) (y - 1);
+        in
+          board_north_west_flooded;
 
         tile = get_tile prev_board x y;
       in
@@ -78,7 +93,7 @@ in {
         then lib.trace "invalid" prev_board
         else if !should_propagate tile
         then lib.trace "notzero" board_self_revealed
-        else lib.trace "ok" board_east_flooded;
+        else lib.trace "ok" board_fully_flooded;
     in
       board: x: y: recusive_fill board x y;
 
@@ -95,7 +110,7 @@ in {
       hit_mine = (get_tile board cursor_x cursor_y).mine;
 
       flood_fill = board: flood_fill_reveal board cursor_x cursor_y;
-      hit_mine_board = edit_board_tile_under_cursor (tile: tile // {revealed = true;});
+      hit_mine_board = reveal_all_mines board;
     in
       if first_move
       then {

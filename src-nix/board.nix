@@ -17,6 +17,17 @@
       else row)
     board;
 
+  reveal_all_mines = board:
+    lib.imap0 (
+      y: row:
+        lib.imap0 (x: tile:
+          if tile.mine
+          then tile // {revealed = true;}
+          else tile)
+        row
+    )
+    board;
+
   get_num_covered_tiles = board: let
     tiles = lib.flatten board;
   in
@@ -27,11 +38,25 @@
   in
     lib.any (tile: tile.mine && tile.revealed) tiles;
 
-  get_win_state = {
-    board,
-    num_mines,
-    ...
-  } @ config: let
+  get_num_mines = board:
+    lib.foldr (
+      row: count:
+        count
+        + (lib.foldr (tile: count:
+            count
+            + (
+              if tile.mine
+              then 1
+              else 0
+            ))
+          0
+          row)
+    )
+    0
+    board;
+
+  get_win_state = {board, ...} @ config: let
+    num_mines = get_num_mines board;
     mine_revealed = is_mine_revealed board;
     num_covered_tiles = get_num_covered_tiles board;
     revealed_all_other_tiles = num_covered_tiles == num_mines;
@@ -50,10 +75,17 @@
     place_mine = board: rng: let
       mine_x = rng.intBetween 1 board_width - 1;
       mine_y = rng.next.intBetween 1 board_height - 1;
-    in {
-      board = edit_tile board (tile: tile // {mine = true;}) mine_x mine_y;
-      rng = rng.skip 2;
-    };
+      next_rng = rng.skip 2;
+    in
+      if (get_tile board mine_x mine_y).mine
+      then
+        (
+          place_mine board next_rng
+        )
+      else {
+        board = edit_tile board (tile: tile // {mine = true;}) mine_x mine_y;
+        rng = next_rng;
+      };
 
     fill_board = n: board: rng: let
       res = place_mine board rng;
@@ -134,5 +166,12 @@
       rng = rng;
     };
 in {
-  inherit get_tile edit_tile generate_board regenerate_until_space_at_position get_win_state;
+  inherit
+    get_tile
+    edit_tile
+    reveal_all_mines
+    generate_board
+    regenerate_until_space_at_position
+    get_win_state
+    ;
 }
