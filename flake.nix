@@ -48,7 +48,7 @@
       nixBinary = "${pkgs.nix}/bin/nix";
     in {
       devShells.default = pkgs.mkShell {
-        buildInputs = with pkgs; [alejandra rustToolchain];
+        packages = with pkgs; [alejandra rustToolchain];
         RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/src";
         NIX_BINARY = nixBinary;
         NIX_CODE_SRC = "./src-nix"; # String in dev mode for rapid iteration

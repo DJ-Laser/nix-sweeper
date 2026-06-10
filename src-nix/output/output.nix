@@ -1,8 +1,6 @@
-{
-  lib,
-  colors,
-  ...
-}: let
+{lib, ...} @ imports: let
+  inherit (import ./colors.nix imports) colors;
+
   tile_to_ascii = selected: tile: let
     revealed_icon =
       if tile.mine
@@ -15,7 +13,7 @@
       if tile.revealed
       then revealed_icon
       else if tile.flagged
-      then "◆"
+      then "f"
       else "-";
 
     tile_color =
